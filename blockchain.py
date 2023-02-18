@@ -1,6 +1,8 @@
 import datetime
 import hashlib
 import json
+import os.path
+
 from flask import Flask, jsonify
 
 
@@ -17,7 +19,28 @@ class Blockchain:
                  "proof": proof,
                  "previous_hash": previous_hash}
         self.chain.append(block)
+        self.block_saver(block)
         return block
+
+    def block_saver(self, block):
+        filename = "blockchain.json"
+        file_existence = os.path.isfile(filename)
+        with open(filename, "a") as f:
+            if file_existence:
+                f.write(",")
+            f.write(json.dumps(block))
+
+    def chain_loader(self):
+        filename = "blockchain.json"
+        if not os.path.isfile(filename):
+            return
+
+        with open(filename, "r") as f:
+            contents = f.read().strip()
+            if not contents:
+                return
+            blocks = f"[{contents}]"
+        self.chain = json.loads(blocks)
 
     # Previous block viewer
     def print_previous_block(self):
@@ -30,7 +53,7 @@ class Blockchain:
 
         while not check_proof:
             hash_operation = hashlib.sha256(
-                str(new_proof**2 - previous_proof**2).encode()).hexdigest()
+                str(new_proof ** 2 - previous_proof ** 2).encode()).hexdigest()
             if hash_operation[:5] == "00000":
                 check_proof = True
             else:
@@ -53,7 +76,7 @@ class Blockchain:
 
             previous_proof = previous_block["proof"]
             proof = block["proof"]
-            hash_operation = hashlib.sha256(str(proof**2 - previous_proof**2).encode()).hexdigest()
+            hash_operation = hashlib.sha256(str(proof ** 2 - previous_proof ** 2).encode()).hexdigest()
 
             if hash_operation[:5] != "00000":
                 return False
