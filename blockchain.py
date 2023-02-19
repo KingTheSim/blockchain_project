@@ -10,7 +10,9 @@ class Blockchain:
     # First block creation function
     def __init__(self):
         self.chain = []
-        self.create_block(proof=1, previous_hash="0")
+        self.chain_loader()
+        if not self.chain:
+            self.create_block(proof=1, previous_hash="0")
 
     # Block generator
     def create_block(self, proof, previous_hash):
