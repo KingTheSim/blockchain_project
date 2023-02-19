@@ -6,3 +6,6 @@ To do any of the shown above, the program must be run in an Pycharm(Probably oth
 
 18.02.2023
 Added the ability to store the blocks in a json format file. The code will check if the file exists. If it doesn't, it will create it. If it does exist, it is supposed to use it and to continue the blockchain from the stored information in the file. Currently is broken. Will need to continue working on it later.
+
+19.02.2023
+Fixed the blockchain saving and usage. Now, the code will search for a blockchain file. If it exists, it will continue the blockchain from the last block in the file and add any new ones to it.
