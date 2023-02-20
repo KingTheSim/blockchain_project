@@ -2,7 +2,7 @@ import datetime
 import hashlib
 import json
 import os.path
-
+import requests
 from flask import Flask, jsonify
 
 
@@ -24,6 +24,7 @@ class Blockchain:
         self.block_saver(block)
         return block
 
+    # Saves the chain
     def block_saver(self, block):
         filename = "blockchain.json"
         file_existence = os.path.isfile(filename)
@@ -32,6 +33,7 @@ class Blockchain:
                 f.write(",")
             f.write(json.dumps(block))
 
+    # Loads the chain
     def chain_loader(self):
         filename = "blockchain.json"
         if not os.path.isfile(filename):
@@ -43,6 +45,13 @@ class Blockchain:
                 return
             blocks = f"[{contents}]"
         self.chain = json.loads(blocks)
+
+        if not self.chain_valid(self.chain):
+            if self.resolver():
+                print("The conflicts have been resolved by replacing the chain.")
+            else:
+                print("The chain is invalid and could not be resolved.")
+
 
     # Previous block viewer
     def print_previous_block(self):
@@ -63,10 +72,12 @@ class Blockchain:
 
         return new_proof
 
+    # Creates the hash for the block
     def hash(self, block):
         encoded_block = json.dumps(block, sort_keys=True).encode()
         return hashlib.sha256(encoded_block).hexdigest()
 
+    # Checks the validity of the chain
     def chain_valid(self, chain):
         previous_block = chain[0]
         block_index = 1
@@ -87,7 +98,30 @@ class Blockchain:
 
         return True
 
+    # Resolves conflicts, if there's a problem with the validity.
+    def resolver(self):
+        neighbours = []   # This is supposed to be a list of neighbouring nodes, from which to fetch the blockchain.
+        max_length = len(self.chain)
+        new_chain = None
 
+        # Fetches and verifies the chains from all neighbouring nodes
+        for node in neighbours:
+            response = requests.get(f"{node}/get_chain")
+            if response.status_code == "200":
+                length = response.json()["len"]
+                chain = response.json()["chain"]
+
+                # Checks if the chain is longer and valid
+                if length > max_length and self.chain_valid(chain):
+                    max_length = length
+                    new_chain = chain
+
+        # Replaces our chain if a longer valid is found
+        if new_chain:
+            self.chain = new_chain
+            return True
+
+        return False
 # Web app creation
 app = Flask(__name__)
 
@@ -130,6 +164,12 @@ def valid():
         response = {"message": "The blockchain is valid."}
     else:
         response = {"message": "The blockchain is invalid"}
+        # If the chain is invalid, try to resolve the conflicts
+        if blockchain.resolver():
+            response["message"] += " But the conflict has been resolved by replacing the chain."
+        else:
+            response["message"] += " The chain is still invalid."
+
     return jsonify(response), 200
 
 
