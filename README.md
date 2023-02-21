@@ -9,3 +9,6 @@ Added the ability to store the blocks in a json format file. The code will check
 
 19.02.2023
 Fixed the blockchain saving and usage. Now, the code will search for a blockchain file. If it exists, it will continue the blockchain from the last block in the file and add any new ones to it.
+
+20.02.2023
+Added a resolver to the Blockchain class. It's function is, if the blockchain is found to be invalid, to seek out a valid chain and replace the invalid one. It requires another valid blockchain to work, so it currently doesn't.
