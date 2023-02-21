@@ -12,3 +12,6 @@ Fixed the blockchain saving and usage. Now, the code will search for a blockchai
 
 20.02.2023
 Added a resolver to the Blockchain class. It's function is, if the blockchain is found to be invalid, to seek out a valid chain and replace the invalid one. It requires another valid blockchain to work, so it currently doesn't.
+
+21.02.2023
+Added a Node class. Also, figured out how to call methods from one class into another and how to create objects that represent the classes outside. Added a method to broadcast the blockchain, to add neighbours. The resolver is moved to the Node class. It wasn't easy to figure out how to use stuff from one class to another, but now it will be more easy.
