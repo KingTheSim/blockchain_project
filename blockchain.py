@@ -6,51 +6,10 @@ import requests
 from flask import Flask, jsonify
 
 
-class Node:
-
-    def __init__(self):
-        self.blockchain = Blockchain()
-        self.neighbours = []
-
-    def add_neighbour(self, neighbour):
-        self.neighbours.append(neighbour)
-
-
-    def broadcast_block(self, block):
-        # Broadcasts a new block to the network neighbours
-        for neighbour in self.neighbours:
-            neighbour.receive_block(block)
-
-    def resolver(self):
-        neighbours = []  # This is supposed to be a list of neighbouring nodes, from which to fetch the blockchain.
-        max_length = len(self.blockchain.chain)
-        new_chain = None
-
-        # Fetches and verifies the chains from all neighbouring nodes
-        for node in neighbours:
-            response = requests.get(f"{node}/get_chain")
-            if response.status_code == "200":
-                length = response.json()["len"]
-                chain = response.json()["chain"]
-
-                # Checks if the chain is longer and valid
-                if length > max_length and self.blockchain.chain_valid(chain):
-                    max_length = length
-                    new_chain = chain
-
-        # Replaces our chain if a longer valid is found
-        if new_chain:
-            self.blockchain.chain = new_chain
-            return True
-
-        return False
-
-
 class Blockchain:
     # First block creation function
     def __init__(self):
         self.chain = []
-        self.node = Node()
         self.chain_loader()
         if not self.chain:
             self.create_block(proof=1, previous_hash="0")
@@ -63,7 +22,6 @@ class Blockchain:
                  "previous_hash": previous_hash}
         self.chain.append(block)
         self.block_saver(block)
-        self.node.broadcast_block(block)
         return block
 
     # Saves the chain
@@ -89,7 +47,7 @@ class Blockchain:
         self.chain = json.loads(blocks)
 
         if not self.chain_valid(self.chain):
-            if self.node.resolver():
+            if self.resolver():
                 print("The conflicts have been resolved by replacing the chain.")
             else:
                 print("The chain is invalid and could not be resolved.")
@@ -139,6 +97,26 @@ class Blockchain:
 
         return True
 
+    def resolver(self):
+        # Receive the chains of all the nodes in the network
+        response = requests.get("http://localhost:5000/get_chains")
+        chains = response.json()["chains"]
+
+        # Find the longest chain
+        longest_chain = self.chain
+        max_length = len(self.chain)
+        for chain in chains:
+            length = chain["length"]
+            if length > max_length and self.chain_valid(chain["chain"]):
+                max_length = length
+                longest_chain = chain["chain"]
+
+        # Chain replacer
+        if longest_chain != self.chain:
+            self.chain = longest_chain
+            return True
+        return False
+
 
 # Web app creation
 app = Flask(__name__)
@@ -146,7 +124,6 @@ app = Flask(__name__)
 # Creates objects of the different classes.
 # It's used to connect a class to a class and use different methods from each other
 blockchain = Blockchain()
-node = Node()
 
 
 # Mining a new block
@@ -185,7 +162,7 @@ def valid():
     else:
         response = {"message": "The blockchain is invalid"}
         # If the chain is invalid, try to resolve the conflicts
-        if node.resolver():
+        if blockchain.resolver():
             response["message"] += " But the conflict has been resolved by replacing the chain."
         else:
             response["message"] += " The chain is still invalid."
