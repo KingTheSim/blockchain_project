@@ -12,3 +12,6 @@ Fixed the blockchain saving and usage. Now, the code will search for a blockchai
 
 20.02.2023
 Added a resolver to the Blockchain class. It's function is, if the blockchain is found to be invalid, to seek out a valid chain and replace the invalid one. It requires another valid blockchain to work, so it currently doesn't.
+
+25.02.2023
+Reverted some of the changes, since the program was fully broken and I didn't understand them myself. Also, changed some of the functions in it. Now, the resolver method should work, if there are more nodes in the network.
