@@ -144,6 +144,26 @@ def mine_block():
     return jsonify(response), 200
 
 
+# List of nodes
+nodes = []
+
+
+# Adds nodes to the network
+@app.route("/add_nodes/string:node", methods=["GET"])
+def add_node(node):
+    nodes.append(node)
+    response = {"message": "New node is added.", "nodes": nodes}
+    return jsonify(response), 200
+
+
+# Removing nodes from the network
+@app.route("/remove_node/string:node", methods=["GET"])
+def remove_node(node):
+    nodes.remove(node)
+    response = {"message": "A node is removed.", "nodes": nodes}
+    return jsonify(response), 200
+
+
 # Displaying blockchain
 @app.route("/get_chain", methods=["GET"])
 def display_chain():
@@ -152,21 +172,31 @@ def display_chain():
     return jsonify(response), 200
 
 
+# Returns the chains from all the nodes in the network
+@app.route("/get_chains", methods=["GET"])
+def get_chains():
+    blockchain.resolver()
+    chains = [{"chain": blockchain.chain, "length": len(blockchain.chain)}]
+    for node in nodes:
+        if node != blockchain:
+            response = requests.get(f"http://{node}/get_chain")
+            if response.status_code == 200:
+                length = response.json()["len"]
+                chain = response.json()["chain"]
+                chains.append({"chain": chain, "length": length})
+
+    response = {"chains": chains}
+    return jsonify(response), 200
+
+
 # Validity checker
 @app.route("/valid", methods=["GET"])
 def valid():
-    valid = blockchain.chain_valid(blockchain.chain)
-
-    if valid:
+    blockchain.resolver()
+    if blockchain.chain_valid(blockchain.chain):
         response = {"message": "The blockchain is valid."}
     else:
-        response = {"message": "The blockchain is invalid"}
-        # If the chain is invalid, try to resolve the conflicts
-        if blockchain.resolver():
-            response["message"] += " But the conflict has been resolved by replacing the chain."
-        else:
-            response["message"] += " The chain is still invalid."
-
+        response = {"message": "The blockchain is not valid."}
     return jsonify(response), 200
 
 
