@@ -15,3 +15,6 @@ Added a resolver to the Blockchain class. It's function is, if the blockchain is
 
 21.02.2023
 Added a Node class. Also, figured out how to call methods from one class into another and how to create objects that represent the classes outside. Added a method to broadcast the blockchain, to add neighbours. The resolver is moved to the Node class. It wasn't easy to figure out how to use stuff from one class to another, but now it will be more easy.
+
+25.02.2023
+I reversed some of the changes that I made, since I am unable to understand them myself.
