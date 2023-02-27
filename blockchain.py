@@ -8,9 +8,10 @@ from flask import Flask, jsonify
 
 class Blockchain:
     # First block creation function
-    def __init__(self):
+    def __init__(self, nodes):
         self.chain = []
         self.chain_loader()
+        self.nodes = nodes
         if not self.chain:
             self.create_block(proof=1, previous_hash="0")
 
@@ -98,32 +99,39 @@ class Blockchain:
         return True
 
     def resolver(self):
-        # Receive the chains of all the nodes in the network
-        response = requests.get("http://localhost:5000/get_chains")
-        chains = response.json()["chains"]
+        new_chain = None
 
-        # Find the longest chain
-        longest_chain = self.chain
         max_length = len(self.chain)
-        for chain in chains:
-            length = chain["length"]
-            if length > max_length and self.chain_valid(chain["chain"]):
-                max_length = length
-                longest_chain = chain["chain"]
 
-        # Chain replacer
-        if longest_chain != self.chain:
-            self.chain = longest_chain
-            return True
+        for node in nodes:
+            response = requests.get(f"http://{node}/chain")
+
+            if response.status_code == 200:
+                length = response.json()["length"]
+                chain = response.json()["chain"]
+
+                # Check for the validity and length:
+                if length > max_length and self.chain_valid(chain):
+                    max_length = length
+                    new_chain = chain
+
+            # Replace the chain if we discover new valid chain, longer than our
+            if new_chain:
+                self.chain = new_chain
+                return True
+
         return False
 
+
+# List of nodes
+nodes = ["localhost:5000", "localhost:5001", "localhost:5002"]
 
 # Web app creation
 app = Flask(__name__)
 
 # Creates objects of the different classes.
 # It's used to connect a class to a class and use different methods from each other
-blockchain = Blockchain()
+blockchain = Blockchain(nodes)
 
 
 # Mining a new block
@@ -142,10 +150,6 @@ def mine_block():
                 "previous_hash": block["previous_hash"]}
 
     return jsonify(response), 200
-
-
-# List of nodes
-nodes = []
 
 
 # Adds nodes to the network
@@ -175,7 +179,6 @@ def display_chain():
 # Returns the chains from all the nodes in the network
 @app.route("/get_chains", methods=["GET"])
 def get_chains():
-    blockchain.resolver()
     chains = [{"chain": blockchain.chain, "length": len(blockchain.chain)}]
     for node in nodes:
         if node != blockchain:
@@ -198,6 +201,17 @@ def valid():
     else:
         response = {"message": "The blockchain is not valid."}
     return jsonify(response), 200
+
+
+@app.route("/resolve_conflicts", methods=["GET"])
+def resolve_conflicts():
+    if blockchain.resolver():
+        response = {"message": "The conflicts have been resolved by replacing the chain."}
+        status_code = 200
+    else:
+        response = {"message": "The chain is valid."}
+        status_code = 200
+    return jsonify(response), status_code
 
 
 # Run flask server locally
