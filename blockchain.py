@@ -4,6 +4,46 @@ import json
 import os.path
 import requests
 from flask import Flask, jsonify
+import uuid
+
+
+class Node:
+    def __init__(self):
+        self.nodes = {}
+        self.removed = set()
+        self.blocked = set()
+
+    def add_node(self, node):
+        un_id = str(uuid.uuid4())
+        if un_id not in self.blocked:
+            self.nodes[un_id] = {}
+            return un_id
+        else:
+            print("Node is blocked and cannot be added.")
+
+    def remove_node(self, node_id):
+        if node_id in self.nodes:
+            if node_id not in self.blocked and node_id not in self.removed:
+                del self.nodes[node_id]
+                self.removed.add(node_id)
+                print("Node successfully removed.")
+            else:
+                print("Node is either blocked or already removed and cannot be removed again.")
+        else:
+            print("Node not found.")
+
+    def block_node(self, node_id):
+        if node_id in self.nodes:
+            if node_id not in self.blocked:
+                self.blocked.add(node_id)
+                print("Node successfully blocked.")
+            else:
+                print("Node already blocked and cannot be blocked.")
+        else:
+            print("Node not found.")
+
+    def get_nodes(self):
+        return [node for node in self.nodes if node not in self.removed and node not in self.blocked]
 
 
 class Blockchain:
@@ -103,7 +143,7 @@ class Blockchain:
 
         max_length = len(self.chain)
 
-        for node in nodes:
+        for node in self.nodes:
             response = requests.get(f"http://{node}/chain")
 
             if response.status_code == 200:
