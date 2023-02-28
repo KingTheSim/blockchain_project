@@ -17,4 +17,4 @@ Added a resolver to the Blockchain class. It's function is, if the blockchain is
 Reverted some of the changes, since the program was fully broken and I didn't understand them myself. Also, changed some of the functions in it. Now, the resolver method should work, if there are more nodes in the network.
 
 27.0.2023
-Reworked the resolver method. Added a /resolve_conflicts route to the app. Currently works on a preset number of nodes, all on my system. Will work on adding a Node class, if it's possible. The new links are http://localhost:5000/resolve_conflicts and http://localhost:5000/get_chains is the old link, but I didn't add it last time.
+Reworked the resolver method. Added a /resolve_conflicts route to the app. Currently works on a preset number of nodes, all on my system. Will work on adding a Node class, if it's possible. The new links are http://localhost:5000/resolve_conflicts and http://localhost:5000/get_chains is the old link, but I didn't add it last time. Also, added the option to add and remove nodes.
