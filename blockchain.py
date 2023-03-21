@@ -2,56 +2,15 @@ import datetime
 import hashlib
 import json
 import os.path
-import requests
+
 from flask import Flask, jsonify
-import uuid
-
-
-class Node:
-    def __init__(self):
-        self.nodes = {}
-        self.removed = set()
-        self.blocked = set()
-
-    def add_node(self, node):
-        un_id = str(uuid.uuid4())
-        if un_id not in self.blocked:
-            self.nodes[un_id] = {}
-            return un_id
-        else:
-            print("Node is blocked and cannot be added.")
-
-    def remove_node(self, node_id):
-        if node_id in self.nodes:
-            if node_id not in self.blocked and node_id not in self.removed:
-                del self.nodes[node_id]
-                self.removed.add(node_id)
-                print("Node successfully removed.")
-            else:
-                print("Node is either blocked or already removed and cannot be removed again.")
-        else:
-            print("Node not found.")
-
-    def block_node(self, node_id):
-        if node_id in self.nodes:
-            if node_id not in self.blocked:
-                self.blocked.add(node_id)
-                print("Node successfully blocked.")
-            else:
-                print("Node already blocked and cannot be blocked.")
-        else:
-            print("Node not found.")
-
-    def get_nodes(self):
-        return [node for node in self.nodes if node not in self.removed and node not in self.blocked]
 
 
 class Blockchain:
     # First block creation function
-    def __init__(self, nodes):
+    def __init__(self):
         self.chain = []
         self.chain_loader()
-        self.nodes = nodes
         if not self.chain:
             self.create_block(proof=1, previous_hash="0")
 
@@ -65,7 +24,6 @@ class Blockchain:
         self.block_saver(block)
         return block
 
-    # Saves the chain
     def block_saver(self, block):
         filename = "blockchain.json"
         file_existence = os.path.isfile(filename)
@@ -74,7 +32,6 @@ class Blockchain:
                 f.write(",")
             f.write(json.dumps(block))
 
-    # Loads the chain
     def chain_loader(self):
         filename = "blockchain.json"
         if not os.path.isfile(filename):
@@ -86,12 +43,6 @@ class Blockchain:
                 return
             blocks = f"[{contents}]"
         self.chain = json.loads(blocks)
-
-        if not self.chain_valid(self.chain):
-            if self.resolver():
-                print("The conflicts have been resolved by replacing the chain.")
-            else:
-                print("The chain is invalid and could not be resolved.")
 
     # Previous block viewer
     def print_previous_block(self):
@@ -112,12 +63,10 @@ class Blockchain:
 
         return new_proof
 
-    # Creates the hash for the block
     def hash(self, block):
         encoded_block = json.dumps(block, sort_keys=True).encode()
         return hashlib.sha256(encoded_block).hexdigest()
 
-    # Checks the validity of the chain
     def chain_valid(self, chain):
         previous_block = chain[0]
         block_index = 1
@@ -138,40 +87,12 @@ class Blockchain:
 
         return True
 
-    def resolver(self):
-        new_chain = None
-
-        max_length = len(self.chain)
-
-        for node in self.nodes:
-            response = requests.get(f"http://{node}/chain")
-
-            if response.status_code == 200:
-                length = response.json()["length"]
-                chain = response.json()["chain"]
-
-                # Check for the validity and length:
-                if length > max_length and self.chain_valid(chain):
-                    max_length = length
-                    new_chain = chain
-
-            # Replace the chain if we discover new valid chain, longer than our
-            if new_chain:
-                self.chain = new_chain
-                return True
-
-        return False
-
-
-# List of nodes
-nodes = ["localhost:5000", "localhost:5001", "localhost:5002"]
 
 # Web app creation
 app = Flask(__name__)
 
-# Creates objects of the different classes.
-# It's used to connect a class to a class and use different methods from each other
-blockchain = Blockchain(nodes)
+# Creates object of the class blockchain. NEED TO CHECK IT OUT!!!
+blockchain = Blockchain()
 
 
 # Mining a new block
@@ -192,22 +113,6 @@ def mine_block():
     return jsonify(response), 200
 
 
-# Adds nodes to the network
-@app.route("/add_nodes/string:node", methods=["GET"])
-def add_node(node):
-    nodes.append(node)
-    response = {"message": "New node is added.", "nodes": nodes}
-    return jsonify(response), 200
-
-
-# Removing nodes from the network
-@app.route("/remove_node/string:node", methods=["GET"])
-def remove_node(node):
-    nodes.remove(node)
-    response = {"message": "A node is removed.", "nodes": nodes}
-    return jsonify(response), 200
-
-
 # Displaying blockchain
 @app.route("/get_chain", methods=["GET"])
 def display_chain():
@@ -216,42 +121,16 @@ def display_chain():
     return jsonify(response), 200
 
 
-# Returns the chains from all the nodes in the network
-@app.route("/get_chains", methods=["GET"])
-def get_chains():
-    chains = [{"chain": blockchain.chain, "length": len(blockchain.chain)}]
-    for node in nodes:
-        if node != blockchain:
-            response = requests.get(f"http://{node}/get_chain")
-            if response.status_code == 200:
-                length = response.json()["len"]
-                chain = response.json()["chain"]
-                chains.append({"chain": chain, "length": length})
-
-    response = {"chains": chains}
-    return jsonify(response), 200
-
-
 # Validity checker
 @app.route("/valid", methods=["GET"])
 def valid():
-    blockchain.resolver()
-    if blockchain.chain_valid(blockchain.chain):
+    valid = blockchain.chain_valid(blockchain.chain)
+
+    if valid:
         response = {"message": "The blockchain is valid."}
     else:
-        response = {"message": "The blockchain is not valid."}
+        response = {"message": "The blockchain is invalid"}
     return jsonify(response), 200
-
-
-@app.route("/resolve_conflicts", methods=["GET"])
-def resolve_conflicts():
-    if blockchain.resolver():
-        response = {"message": "The conflicts have been resolved by replacing the chain."}
-        status_code = 200
-    else:
-        response = {"message": "The chain is valid."}
-        status_code = 200
-    return jsonify(response), status_code
 
 
 # Run flask server locally
