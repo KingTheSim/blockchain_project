@@ -21,3 +21,6 @@ Reworked the resolver method. Added a /resolve_conflicts route to the app. Curre
 
 28.02.2023
 Added a class Node. It is where the nodes will be stored. It has methods to add, remove, block nodes, aswell as to return all valid, non-blocked and non-removed nodes.
+
+22.03.2023
+Reverted to a really old version of the blockchain. Here, all of the functionalities work. I'll continue from this point and try to not create non-working spaghetty code.
