@@ -24,3 +24,6 @@ Added a class Node. It is where the nodes will be stored. It has methods to add,
 
 22.03.2023
 Reverted to a really old version of the blockchain. Here, all of the functionalities work. I'll continue from this point and try to not create non-working spaghetty code.
+
+24.03.2023
+Worked on the implementation of a trainer, that uses SQL files as datasets. It's yet to be tested.
