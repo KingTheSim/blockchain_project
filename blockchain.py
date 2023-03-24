@@ -2,7 +2,8 @@ import datetime
 import hashlib
 import json
 import os.path
-
+import torch
+import sqlite3
 from flask import Flask, jsonify
 
 
@@ -12,14 +13,15 @@ class Blockchain:
         self.chain = []
         self.chain_loader()
         if not self.chain:
-            self.create_block(proof=1, previous_hash="0")
+            self.create_block(proof=1, previous_hash="0", trained_model_state_dict=None)
 
     # Block generator
-    def create_block(self, proof, previous_hash):
+    def create_block(self, proof, previous_hash, trained_model_state_dict):
         block = {"index": len(self.chain) + 1,
                  "timestamp": str(datetime.datetime.now()),
                  "proof": proof,
-                 "previous_hash": previous_hash}
+                 "previous_hash": previous_hash,
+                 "model_updates": trained_model_state_dict}
         self.chain.append(block)
         self.block_saver(block)
         return block
@@ -88,10 +90,75 @@ class Blockchain:
         return True
 
 
+class FederatedDataset:
+    def __init__(self, data, transform=None):
+        self.data = data
+        self.transform = transform
+
+    def __getitem__(self, index):
+        x, y = self.data[index]
+
+        if self.transform:
+            x = self.transform(x)
+
+        return x, y
+
+    def __len__(self):
+        return len(self.data)
+
+
+class FederatedDataLoader:
+    def __init__(self, hf_dataset, batch_size=1, shuffle=False):
+        self.dataset = FederatedDataset(hf_dataset)
+        self.batch_size = batch_size
+        self.shuffle = shuffle
+
+    def __iter__(self):
+        if self.shuffle:
+            indices = torch.randperm(len(self.dataset))
+        else:
+            indices = torch.arange(len(self.dataset))
+
+        for start_idx in range(0, len(self.dataset), self.batch_size):
+            end_idx = min(start_idx + self.batch_size, len(self.dataset))
+            batch_indices = indices[start_idx:end_idx]
+            yield [self.dataset[i] for i in batch_indices]
+
+
+def create_model():
+    model = torch.nn.Sequential(
+        torch.nn.Linear(1, 32),
+        torch.nn.ReLU(),
+        torch.nn.Linear(32, 32),
+        torch.nn.ReLU(),
+        torch.nn.Linear(32, 1),
+        torch.nn.Sigmoid()
+    )
+    return model
+
+
+def train_model(model, federated_dataloader):
+    # Define model
+    loss_fn = torch.nn.BCELoss()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+
+    # Train model
+    num_epochs = 10  # Can be changed later on. For now, it's hard-coded
+    for epoch in range(num_epochs):
+        for batch in federated_dataloader:
+            x, y = batch
+            y_predict = model(x)
+            loss = loss_fn(y_predict, y)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+    return model.state_dict()
+
+
 # Web app creation
 app = Flask(__name__)
 
-# Creates object of the class blockchain. NEED TO CHECK IT OUT!!!
+# Creates object of the class blockchain.
 blockchain = Blockchain()
 
 
@@ -102,13 +169,35 @@ def mine_block():
     previous_proof = previous_block["proof"]
     proof = blockchain.proof_of_work(previous_proof)
     previous_hash = blockchain.hash(previous_block)
-    block = blockchain.create_block(proof, previous_hash)
+
+    # Creating a model
+    model = create_model()
+
+    # Connecting to a dataset
+    conn = sqlite3.connect("current_database.db")
+    cursor = conn.cursor()
+
+    # Extracting the data
+    cursor.execute("SELECT sentence, label FROM mytable")
+    rows = cursor.fetchall()
+    data = [(row[0], row[1]) for row in rows]
+
+    # Using the data
+    federated_dataset = FederatedDataset(data)
+    federated_dataloader = FederatedDataLoader(federated_dataset, batch_size=1, shuffle=True)
+
+    # Model training
+    trained_model_state_dict = train_model(model, federated_dataloader)
+
+    # Block building
+    block = blockchain.create_block(proof, previous_hash, trained_model_state_dict)
 
     response = {"message": "A block is mined",
                 "index": block["index"],
                 "timestamp": block["timestamp"],
                 "proof": block["proof"],
-                "previous_hash": block["previous_hash"]}
+                "previous_hash": block["previous_hash"],
+                "trained_model_state_dict": block["trained_model_state_dict"]}
 
     return jsonify(response), 200
 
