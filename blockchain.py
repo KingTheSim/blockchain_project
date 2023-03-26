@@ -1,7 +1,11 @@
+import base64
 import datetime
 import hashlib
 import json
 import os.path
+import pickle
+import random
+
 import torch
 import sqlite3
 from flask import Flask, jsonify
@@ -13,15 +17,15 @@ class Blockchain:
         self.chain = []
         self.chain_loader()
         if not self.chain:
-            self.create_block(proof=1, previous_hash="0", trained_model_state_dict=None)
+            self.create_block(proof=1, previous_hash="0", encoded_model=None)
 
     # Block generator
-    def create_block(self, proof, previous_hash, trained_model_state_dict):
+    def create_block(self, proof, previous_hash, encoded_model):
         block = {"index": len(self.chain) + 1,
                  "timestamp": str(datetime.datetime.now()),
                  "proof": proof,
                  "previous_hash": previous_hash,
-                 "model_updates": trained_model_state_dict}
+                 "encoded_model": encoded_model}
         self.chain.append(block)
         self.block_saver(block)
         return block
@@ -91,25 +95,27 @@ class Blockchain:
 
 
 class FederatedDataset:
-    def __init__(self, data, transform=None):
-        self.data = data
+    def __init__(self, sentences, labels, transform=None):
+        self.sentences = sentences
+        self.labels = labels
         self.transform = transform
 
     def __getitem__(self, index):
-        x, y = self.data[index]
+        sentence, label = self.sentences[index], self.labels[index]
 
         if self.transform:
-            x = self.transform(x)
+            sentence = self.transform(sentence)
+            label = self.transform(label)
 
-        return x, y
+        return sentence, label
 
     def __len__(self):
-        return len(self.data)
+        return len(self.sentences)
 
 
 class FederatedDataLoader:
     def __init__(self, hf_dataset, batch_size=1, shuffle=False):
-        self.dataset = FederatedDataset(hf_dataset)
+        self.dataset = FederatedDataset(hf_dataset[0], hf_dataset[1])
         self.batch_size = batch_size
         self.shuffle = shuffle
 
@@ -122,7 +128,13 @@ class FederatedDataLoader:
         for start_idx in range(0, len(self.dataset), self.batch_size):
             end_idx = min(start_idx + self.batch_size, len(self.dataset))
             batch_indices = indices[start_idx:end_idx]
-            yield [self.dataset[i] for i in batch_indices]
+            batch = [(x, y) for (x, y) in [self.dataset[i] for i in batch_indices]]
+            x, y = zip(*batch)
+            print(x, y)
+            yield torch.stack(x), torch.stack(y)
+
+    def __len__(self):
+        return len(self.dataset)
 
 
 def create_model():
@@ -137,6 +149,17 @@ def create_model():
     return model
 
 
+def hasher(text):
+    salt = str(random.random()).encode()
+    salted_text = salt + text.encode()
+    hash_object = hashlib.sha256(salted_text)
+    hash_value = int(hash_object.hexdigest(), 16)
+    hash_float = float(hash_value) / float(2 ** 32 - 1)
+    tensor_value = torch.clamp(torch.tensor([hash_float], dtype=torch.float32), 0, 1)
+    print(tensor_value)
+    return tensor_value
+
+
 def train_model(model, federated_dataloader):
     # Define model
     loss_fn = torch.nn.BCELoss()
@@ -145,13 +168,14 @@ def train_model(model, federated_dataloader):
     # Train model
     num_epochs = 10  # Can be changed later on. For now, it's hard-coded
     for epoch in range(num_epochs):
-        for batch in federated_dataloader:
-            x, y = batch
+        for x, y in federated_dataloader:
+            print(x, y)
             y_predict = model(x)
             loss = loss_fn(y_predict, y)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+    print(model.state_dict())
     return model.state_dict()
 
 
@@ -176,28 +200,37 @@ def mine_block():
     # Connecting to a dataset
     conn = sqlite3.connect("current_database.db")
     cursor = conn.cursor()
+    cursor.execute("CREATE TABLE IF NOT EXISTS current_database (sentence TEXT, label TEXT)")
 
     # Extracting the data
-    cursor.execute("SELECT sentence, label FROM mytable")
+    cursor.execute("SELECT sentence, label FROM current_database")
     rows = cursor.fetchall()
-    data = [(row[0], row[1]) for row in rows]
+    sentences, labels = zip(*rows)
+    hashed_sentences = [hasher(sentence) for sentence in sentences]
+    hashed_labels = [hasher(label) for label in labels]
 
     # Using the data
-    federated_dataset = FederatedDataset(data)
+    federated_dataset = FederatedDataset(hashed_sentences, hashed_labels)
     federated_dataloader = FederatedDataLoader(federated_dataset, batch_size=1, shuffle=True)
 
     # Model training
     trained_model_state_dict = train_model(model, federated_dataloader)
 
+    # Serialization
+    serialized_model = pickle.dumps(trained_model_state_dict)
+
+    # Encoding
+    encoded_model = base64.b64encode(serialized_model).decode("utf-8")
+
     # Block building
-    block = blockchain.create_block(proof, previous_hash, trained_model_state_dict)
+    block = blockchain.create_block(proof, previous_hash, encoded_model)
 
     response = {"message": "A block is mined",
                 "index": block["index"],
                 "timestamp": block["timestamp"],
                 "proof": block["proof"],
                 "previous_hash": block["previous_hash"],
-                "trained_model_state_dict": block["trained_model_state_dict"]}
+                "encoded_model": block["encoded_model"]}
 
     return jsonify(response), 200
 
