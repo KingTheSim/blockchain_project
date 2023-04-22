@@ -27,3 +27,6 @@ Reverted to a really old version of the blockchain. Here, all of the functionali
 
 24.03.2023
 Worked on the implementation of a trainer, that uses SQL files as datasets. It's yet to be tested.
+
+26.03.2023
+After a whole day of working on it, I managed to test the current blockchain with a SQL file, to change it up, added a hasher function, which has the job of hashing the data and creating tensors out of it. It's still unclear if they will be useful, but the program's able to run and mine a block without breaking.
