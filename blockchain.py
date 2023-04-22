@@ -5,7 +5,6 @@ import json
 import os.path
 import pickle
 import random
-
 import torch
 import sqlite3
 from flask import Flask, jsonify
@@ -130,7 +129,6 @@ class FederatedDataLoader:
             batch_indices = indices[start_idx:end_idx]
             batch = [(x, y) for (x, y) in [self.dataset[i] for i in batch_indices]]
             x, y = zip(*batch)
-            print(x, y)
             yield torch.stack(x), torch.stack(y)
 
     def __len__(self):
@@ -156,7 +154,6 @@ def hasher(text):
     hash_value = int(hash_object.hexdigest(), 16)
     hash_float = float(hash_value) / float(2 ** 32 - 1)
     tensor_value = torch.clamp(torch.tensor([hash_float], dtype=torch.float32), 0, 1)
-    print(tensor_value)
     return tensor_value
 
 
@@ -169,13 +166,11 @@ def train_model(model, federated_dataloader):
     num_epochs = 10  # Can be changed later on. For now, it's hard-coded
     for epoch in range(num_epochs):
         for x, y in federated_dataloader:
-            print(x, y)
             y_predict = model(x)
             loss = loss_fn(y_predict, y)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-    print(model.state_dict())
     return model.state_dict()
 
 
@@ -246,9 +241,9 @@ def display_chain():
 # Validity checker
 @app.route("/valid", methods=["GET"])
 def valid():
-    valid = blockchain.chain_valid(blockchain.chain)
+    validity = blockchain.chain_valid(blockchain.chain)
 
-    if valid:
+    if validity:
         response = {"message": "The blockchain is valid."}
     else:
         response = {"message": "The blockchain is invalid"}
