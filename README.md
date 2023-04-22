@@ -30,3 +30,6 @@ Worked on the implementation of a trainer, that uses SQL files as datasets. It's
 
 26.03.2023
 After a whole day of working on it, I managed to test the current blockchain with a SQL file, to change it up, added a hasher function, which has the job of hashing the data and creating tensors out of it. It's still unclear if they will be useful, but the program's able to run and mine a block without breaking.
+
+22.04.2023
+Created a module, body, and separated different parts of my code in separate files to make it more readable and organized.
