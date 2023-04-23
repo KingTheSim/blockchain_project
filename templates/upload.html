@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Data Upload</title>
+</head>
+<body>
+    <h1>Upload your data</h1>
+    <form method="POST" enctype="multipart/form-data" action="{{ url_for('upload_data') }}">
+        {{ form.csrf_token }}
+        <label for="data_file">Data file:</label>
+        {{ form.data_file(id="data_file", required=True) }}<br><br>
+        <label for="data_type">Data type:</label>
+        {{ form.data_type(id="data_type") }}<br><br>
+        <label for="label">Label:</label>
+        {{ form.label(id="label", required=True) }}<br><br>
+        <button type="submit">Upload</button>
+    </form>
+</body>
+</html>
