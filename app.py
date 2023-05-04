@@ -1,38 +1,59 @@
 import base64
 import pickle
-from flask import Flask, jsonify, request, redirect, flash, g, render_template
+import nltk
+import io
+import os
+# import cv2
+# import numpy
+from nltk.tokenize import word_tokenize
+from PIL import Image
+from flask import Flask, jsonify, redirect, flash, g, render_template, url_for
 from flask_wtf import FlaskForm
 from wtforms import FileField, SelectField, StringField, SubmitField
 from wtforms.validators import DataRequired
 from body.blockchain import Blockchain
-from body.federated_learning import FederatedDataset, FederatedDataLoader, create_model, hasher, train_model
+from body.federated_learning import FederatedDataset, create_model, hasher, train_model
+from body.utils import allowed_file
+
+nltk.download("punkt")
 
 # Web app creation
 app = Flask(__name__)
-app.config["SECRET_KEY"] = "test_key"  # To be researched
+app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY")
 
 # Creates object of the class blockchain.
 blockchain = Blockchain()
 
-# File specifics
-ALLOWED_EXTENSIONS = {"txt", "jpg", "jpeg", "png", "gif", "mp4", "mkv", "avi"}
-
-
-def allowed_file(filename):
-    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
-
 
 def process_data(data, data_type):
     if data_type == "text":
-        pass
+        text = data.decode("utf-8")
+        words = word_tokenize(text)
+        words = [word.lower() for word in words if word.isalpha()]
+        return " ".join(words)
     elif data_type == "image":
-        pass
+        image = Image.open(io.BytesIO(data))
+        image = image.resize((64, 64)).convert("L")
+        return image
     elif data_type == "video":
         pass
-    else:
-        raise ValueError("Invalid data type")
+    #     frames = []
+    #     file_bytes = numpy.array(bytearray(data), dtype=numpy.uint8)
+    #     video = cv2.imdecode(file_bytes, cv2.IMREAD_UNCHANGED)
+    #
+    #     while video.isOpened():
+    #         ret, frame = video.read()
+    #         if not ret:
+    #             break
+    #         image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    #         image = image.resize((64, 64)).convert("L")
+    #         frames.append(image)
+    #
+    #     video.release()
+    #     return frames
 
-    return data
+    else:
+        raise ValueError(f"Invalid data type: {data_type}")
 
 
 class DataUploadForm(FlaskForm):
@@ -54,38 +75,37 @@ def upload_data():
 
         if not allowed_file(data_file.filename):
             flash("Format not allowed")
-            return redirect(request.url)
+            return redirect(url_for("upload_data"))
 
         g.data = data_file.read()
         g.label = label
         g.processed_data = process_data(g.data, data_type)
 
-        response, status_code = mine_block()
+        response, status_code = mine_block(data_type)
         return jsonify(response), status_code
 
     return render_template("upload.html", form=form)
 
 
 # Mining a new block
-@app.route("/api/v1/blocks/mine", methods=["POST"])
-def mine_block():
+@app.route("/api/v1/blocks/mine/<data_type>", methods=["POST"])
+def mine_block(data_type):
     previous_block = blockchain.print_previous_block()
     previous_proof = previous_block["proof"]
     proof = blockchain.proof_of_work(previous_proof)
     previous_hash = blockchain.hash(previous_block)
 
     # Creating a model
-    model = create_model()
+    model = create_model(data_type)
 
     data = hasher(g.processed_data)
     label = hasher(g.label)
 
     # Using the data
     federated_dataset = FederatedDataset(data, label)
-    federated_dataloader = FederatedDataLoader(federated_dataset, batch_size=1, shuffle=True)
 
     # Model training
-    trained_model_state_dict = train_model(model, federated_dataloader)
+    trained_model_state_dict = train_model(model, federated_dataset)
 
     # Serialization
     serialized_model = pickle.dumps(trained_model_state_dict)
@@ -124,6 +144,12 @@ def valid():
     else:
         response = {"message": "The blockchain is invalid"}
     return jsonify(response), 200
+
+
+# Default route. Redirects to the blockchain
+@app.route("/", methods=["GET"])
+def index():
+    return redirect("/api/v1/blocks")
 
 
 # Run flask server locally
