@@ -2,7 +2,6 @@ import base64
 import pickle
 import nltk
 import io
-import os
 # import cv2
 # import numpy
 from nltk.tokenize import word_tokenize
@@ -19,7 +18,7 @@ nltk.download("punkt")
 
 # Web app creation
 app = Flask(__name__)
-app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY")
+app.config["SECRET_KEY"] = "test_key"
 
 # Creates object of the class blockchain.
 blockchain = Blockchain()

@@ -25,22 +25,31 @@ class Blockchain:
 
     def block_saver(self, block):
         filename = "blockchain.json"
-        file_existence = os.path.isfile(filename)
-        with open(filename, "a") as f:
-            if file_existence:
-                f.write(",")
-            f.write(json.dumps(block))
+        if not os.path.isfile(filename):
+            with open(filename, "w") as f:
+                json.dump([block], f)
+
+        else:
+            with open(filename, "r") as f:
+                chain = json.load(f)
+            chain.append(block)
+            with open(filename, "w") as f:
+                json.dump(chain, f)
+
+    def _file_reader(self, filename):
+        with open(filename, "r") as f:
+            content = f.read().strip()
+        return content
 
     def chain_loader(self):
         filename = "blockchain.json"
         if not os.path.isfile(filename):
             return
 
-        with open(filename, "r") as f:
-            contents = f.read().strip()
-            if not contents:
-                return
-            blocks = f"[{contents}]"
+        content = self._file_reader(filename)
+        if not content:
+            return
+        blocks = f"[{content}]"
         self.chain = json.loads(blocks)
 
     # Previous block viewer
@@ -51,37 +60,33 @@ class Blockchain:
     def proof_of_work(self, previous_proof):
         new_proof = 1
         check_proof = False
+        fail_limit = 100000
 
-        while not check_proof:
+        while not check_proof and new_proof < fail_limit:
             hash_operation = hashlib.sha256(
-                str(new_proof ** 2 - previous_proof ** 2).encode()).hexdigest()
+                f"{(new_proof ** 2 - previous_proof ** 2)}".encode()).hexdigest()
             if hash_operation[:5] == "00000":
                 check_proof = True
             else:
                 new_proof += 1
 
-        return new_proof
+        return new_proof if check_proof else None
 
     def hash(self, block):
         encoded_block = json.dumps(block, sort_keys=True).encode()
         return hashlib.sha256(encoded_block).hexdigest()
 
     def chain_valid(self, chain):
-        previous_block = chain[0]
-        block_index = 1
+        if len(self.chain) < 2:
+            return True
 
-        while block_index < len(chain):
-            block = chain[block_index]
-            if block["previous_hash"] != self.hash(previous_block):
-                return False
+        last, second_last = self.chain[-1], self.chain[-2]
+        if last["previous_hash"] != self.hash(second_last):
+            return False
 
-            previous_proof = previous_block["proof"]
-            proof = block["proof"]
-            hash_operation = hashlib.sha256(str(proof ** 2 - previous_proof ** 2).encode()).hexdigest()
+        previous_proof = second_last["proof"]
+        proof = last["proof"]
 
-            if hash_operation[:5] != "00000":
-                return False
-            previous_block = block
-            block_index += 1
+        hashing = hashlib.sha256(f"{proof ** 2 - previous_proof ** 2}".encode()).hexdigest()
 
         return True

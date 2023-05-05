@@ -125,7 +125,6 @@ def train_model(model, federated_dataset):
     num_epochs = 10  # Can be changed later on. For now, it's hard-coded
     for epoch in range(num_epochs):
         x, y = federated_dataset[0], federated_dataset[1]
-        print(x)
         x = torch.stack(x).unsqueeze(0)
         y = torch.stack(y).unsqueeze(0)
 
