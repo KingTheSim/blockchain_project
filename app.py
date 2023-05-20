@@ -49,7 +49,7 @@ def process_data(data, data_type):
     #         frames.append(image)
     #
     #     video.release()
-    #     return frames
+    #     return frames1
 
     else:
         raise ValueError(f"Invalid data type: {data_type}")
