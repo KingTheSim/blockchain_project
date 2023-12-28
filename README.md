@@ -37,3 +37,6 @@ Created a module, body, and separated different parts of my code in separate fil
 23.04.2023
 Added the option for users to upload data, label it and for it to be processed. Created my first HTML, thus giving that option a GUI. Currently the uploading works, but the federated_learning.py has to be reworked so that it can work with different kinds of data. Also, reworked the endpoints. Now, to upload, the endpoint is: http://127.0.0.1:5000/api/v1/upload; to mine a block the endpoint is: http://127.0.0.1:5000/api/v1/blocks/mine; (The mining is now done after the uploading, so the endpoint will be internal and not ment for users); to display the blockchain the endpoint is: http://127.0.0.1:5000/api/v1/blocks; and to check the blockchain validity the endpoint is: http://127.0.0.1:5000/api/v1/blocks/validity.
 Again, the uploading and mining is currently broken, it doesn't work.
+
+28.12.2023
+Started moving the Blockchain part of my project to Rust. I created a Block and Blockchain structs. I have functions for new blocks and chains and for calculating hashes.
