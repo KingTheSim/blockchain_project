@@ -1,92 +1,190 @@
 import datetime
 import hashlib
 import json
-import os.path
+import time
+from typing import Dict, List
+
+import psycopg2
+from psycopg2.extensions import connection
+from psycopg2.extras import RealDictCursor
+
+
+class Block:
+    def __init__(self, index: int, timestamp, proof: int, previous_hash: str) -> None:
+        self.index: int = index
+        self.timestamp: datetime.datetime = timestamp
+        self.proof: int = proof
+        self.previous_hash: str = previous_hash
+        self.hash: str = self.hash_block()
+
+    def hash_block(self) -> str:
+        block = json.dumps(self.to_dict_without_hash(), sort_keys=True).encode()
+        return hashlib.sha256(block).hexdigest()
+
+    def to_dict_without_hash(self) -> dict:
+        return {
+            "index": self.index,
+            "timestamp": self.timestamp.isoformat(),
+            "proof": self.proof,
+            "previous_hash": self.previous_hash,
+        }
+
+    def to_dict(self) -> dict:
+        return {
+            "index": self.index,
+            "timestamp": self.timestamp.isoformat(),
+            "proof": self.proof,
+            "previous_hash": self.previous_hash,
+            "hash": self.hash,
+        }
+
+    def __str__(self) -> str:
+        return f"Block index: {self.index}, timestamp: {self.timestamp}, proof: {
+            self.proof
+        }, previous_hash: {self.previous_hash}, hash: {self.hash}"
 
 
 class Blockchain:
-    # First block creation function
-    def __init__(self):
-        self.chain = []
-        self.chain_loader()
-        if not self.chain:
-            self.create_block(proof=1, previous_hash="0", encoded_model=None)
+    def __init__(self, db_config: Dict[str, str | None]) -> None:
+        self.db_config = db_config
+        self.height: int = 0
+        self.chain: List[Block] = []
 
-    # Block generator
-    def create_block(self, proof, previous_hash, encoded_model):
-        block = {"index": len(self.chain) + 1,
-                 "timestamp": str(datetime.datetime.now()),
-                 "proof": proof,
-                 "previous_hash": previous_hash,
-                 "encoded_model": encoded_model}
-        self.chain.append(block)
-        self.block_saver(block)
-        return block
+        self.conn = self.connect_to_db()
+        self.create_table()
+        self.load_chain()
 
-    def block_saver(self, block):
-        filename = "blockchain.json"
-        if not os.path.isfile(filename):
-            with open(filename, "w") as f:
-                json.dump([block], f)
+    def connect_to_db(self) -> connection:
+        try:
+            conn = psycopg2.connect(**self.db_config)
+            print("Connected to the database successfully!")
+            return conn
+        except Exception as e:
+            raise Exception(f"Error connecting to database: {e}")
 
-        else:
-            with open(filename, "r") as f:
-                chain = json.load(f)
-            chain.append(block)
-            with open(filename, "w") as f:
-                json.dump(chain, f)
+    def create_table(self) -> None:
+        create_table_query = """
+                CREATE TABLE IF NOT EXISTS blockchain (
+                    index SERIAL PRIMARY KEY,
+                    timestamp TIMESTAMP NOT NULL,
+                    proof INTEGER NOT NULL,
+                    previous_hash VARCHAR(64) NOT NULL,
+                    hash VARCHAR(64) NOT NULL
+                );
+            """
 
-    def _file_reader(self, filename):
-        with open(filename, "r") as f:
-            content = f.read().strip()
-        return content
+        try:
+            with self.conn.cursor() as cursor:
+                cursor.execute(create_table_query)
+                self.conn.commit()
+        except Exception as e:
+            raise Exception(f"Error creating blockchain table: {e}")
 
-    def chain_loader(self):
-        filename = "blockchain.json"
-        if not os.path.isfile(filename):
-            return
+    def load_chain(self) -> None:
+        """
+        Load the blockchain from the database into memory.
+        If it's the chain's start, initialize it with a genesis block.
+        """
+        try:
+            with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute("SELECT * FROM blockchain ORDER BY index ASC;")
+                rows = cursor.fetchall()
 
-        content = self._file_reader(filename)
-        if not content:
-            return
-        blocks = f"[{content}]"
-        self.chain = json.loads(blocks)
+                if rows:
+                    for row in rows:
+                        block = Block(
+                            index=row["index"],
+                            timestamp=row["timestamp"],
+                            proof=row["proof"],
+                            previous_hash=row["previous_hash"],
+                        )
+                        self.chain.append(block)
+                    self.height = rows[-1]["index"]
+                else:
+                    self.create_genesis_block()
+        except Exception as e:
+            raise Exception(f"Error loading blockchain: {e}")
 
-    # Previous block viewer
-    def print_previous_block(self):
-        return self.chain[-1]
+    def create_genesis_block(self) -> None:
+        """Create the genesis block"""
+        genesis_block = Block(
+            index=1,
+            timestamp=datetime.datetime.now(),
+            proof=1,
+            previous_hash="0",
+        )
+        self.add_block_to_db(genesis_block)
+        self.chain.append(genesis_block)
+        self.height = 1
 
-    # Proof-of-work miner
-    def proof_of_work(self, previous_proof):
+    def add_block_to_db(self, block: Block) -> None:
+        try:
+            with self.conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                                    INSERT INTO blockchain (timestamp, proof, previous_hash, hash)
+                                    VALUES (%s, %s, %s, %s)
+                                """,
+                    (block.timestamp, block.proof, block.previous_hash, block.hash),
+                )
+                self.conn.commit()
+        except Exception as e:
+            raise Exception(f"Error adding block to blockchain: {e}")
+
+    def proof_of_work(self, previous_proof: int, timestamp: str) -> int:
+        """
+        Perform a proof-of-work where the hash contains the timestamp.
+        """
         new_proof = 1
         check_proof = False
-        fail_limit = 100000
+        target_prefix = timestamp[-6:]
 
-        while not check_proof and new_proof < fail_limit:
-            hash_operation = hashlib.sha256(
-                f"{(new_proof ** 2 - previous_proof ** 2)}".encode()).hexdigest()
-            if hash_operation[:5] == "00000":
+        while not check_proof:
+            potential_hash = hashlib.sha256(
+                f"{new_proof**2 - previous_proof**2}".encode()
+            ).hexdigest()
+
+            if target_prefix in potential_hash:
                 check_proof = True
             else:
                 new_proof += 1
 
-        return new_proof if check_proof else None
+        return new_proof
 
-    def hash(self, block):
-        encoded_block = json.dumps(block, sort_keys=True).encode()
-        return hashlib.sha256(encoded_block).hexdigest()
+    def mine_block(self) -> Block:
+        """
+        Mines a new block by completing the PoW algorithm and appends it to the chain.
+        """
+        if not self.chain:
+            raise Exception("Blockchain is empty. Initialize it first.")
 
-    def chain_valid(self, chain):
-        if len(self.chain) < 2:
-            return True
+        last_block = self.chain[-1]
+        previous_proof = last_block.proof
+        previous_hash = last_block.hash
 
-        last, second_last = self.chain[-1], self.chain[-2]
-        if last["previous_hash"] != self.hash(second_last):
-            return False
+        current_timestamp = datetime.datetime.now()
+        timestamp_str = current_timestamp.strftime("%Y%m%d%H%M%S")
 
-        previous_proof = second_last["proof"]
-        proof = last["proof"]
+        print(f"Mining block with timestamp {timestamp_str}...")
+        start_time = time.time()
 
-        hashing = hashlib.sha256(f"{proof ** 2 - previous_proof ** 2}".encode()).hexdigest()
+        proof = self.proof_of_work(
+            previous_proof=previous_proof, timestamp=timestamp_str
+        )
+        new_block = Block(
+            index=last_block.index + 1,
+            timestamp=current_timestamp,
+            proof=proof,
+            previous_hash=previous_hash,
+        )
 
-        return True
+        self.add_block_to_db(new_block)
+        self.chain.append(new_block)
+        self.height += 1
+
+        end_time = time.time()
+        print(f"Block mined! Time taken: {end_time - start_time:.2f} seconds")
+        return new_block
+
+    def close_connection(self) -> None:
+        self.conn.close()
