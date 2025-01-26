@@ -50,6 +50,11 @@ class Blockchain:
         self.height: int = 0
         self.chain: List[Block] = []
 
+        self.target_time = 3
+        self.adjust_interval = 10
+        self.difficulty = 6
+        self.mining_times = []
+
         self.conn = self.connect_to_db()
         self.create_table()
         self.load_chain()
@@ -137,7 +142,10 @@ class Blockchain:
         """
         new_proof = 1
         check_proof = False
-        target_prefix = timestamp[-6:]
+
+        max_symbols = len(timestamp)
+        difficulty = min(self.difficulty, max_symbols)
+        target_prefix = timestamp[-difficulty:]
 
         while not check_proof:
             potential_hash = hashlib.sha256(
@@ -150,6 +158,19 @@ class Blockchain:
                 new_proof += 1
 
         return new_proof
+    
+    def adjust_difficulty(self) -> None:
+        if len(self.mining_times) < self.adjust_interval:
+            return None
+    
+        average_time = sum(self.mining_times[-self.adjust_interval:]) / self.adjust_interval
+
+        if average_time < self.target_time - 1:
+            self.difficulty = min(self.difficulty + 1, 14)
+            print(f"Increasing difficulty to {self.difficulty}.")
+        elif average_time > self.target_time + 1 and self.difficulty > 4:
+            self.difficulty = max(self.difficulty - 1, 4)
+            print(f"Decreasing difficulty to {self.difficulty}")
 
     def mine_block(self) -> Block:
         """
@@ -171,6 +192,14 @@ class Blockchain:
         proof = self.proof_of_work(
             previous_proof=previous_proof, timestamp=timestamp_str
         )
+
+        end_time = time.time()
+        self.mining_times.append(end_time - start_time)
+        print(f"Block mined! Time taken: {end_time - start_time:.2f} seconds")
+
+        if len(self.chain) % self.adjust_interval == 0:
+            self.adjust_difficulty()
+
         new_block = Block(
             index=last_block.index + 1,
             timestamp=current_timestamp,
@@ -182,8 +211,6 @@ class Blockchain:
         self.chain.append(new_block)
         self.height += 1
 
-        end_time = time.time()
-        print(f"Block mined! Time taken: {end_time - start_time:.2f} seconds")
         return new_block
 
     def close_connection(self) -> None:

@@ -510,4 +510,7 @@ Cargo.lock
 .history
 .ionide
 
+### Obsidian ###
+blockchain_notes
+
 # End of https://www.toptal.com/developers/gitignore/api/intellij,pycharm,visualstudiocode,python,rust,flask,linux,archlinuxpackages
