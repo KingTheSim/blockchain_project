@@ -1,7 +1,8 @@
 import os
-from typing import List
-from flask import Flask, jsonify, redirect
+
 from dotenv import load_dotenv
+from flask import Flask, jsonify, redirect
+
 from body.blockchain import Blockchain
 
 load_dotenv()

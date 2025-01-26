@@ -1,5 +1,5 @@
 <h1>Blockchain Project</h1>
-<p>A simple blockchain implementation that uses a PostgreSQL database for persistent storage. The project includes APIs for retrieving the entire blockchain and mining new blocks. The proof-of-work (PoW) algorithm is designed to create hashes containing the last n symbols of the block's timestamp.</p>
+<p>A simple blockchain implementation that uses a PostgreSQL database for persistent storage. The project includes APIs for retrieving the entire blockchain and mining new blocks. The proof-of-work (PoW) algorithm is designed to create hashes containing the last n symbols of the block's timestamp. The blockchain is persistent, stored of a PostgreSQL database. Each time it is loaded, the chain is validated to ensure that it hasn't been tampered with.</p>
 
 <section>
 <h2>Features</h2>

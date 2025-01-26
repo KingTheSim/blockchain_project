@@ -10,11 +10,19 @@ from psycopg2.extras import RealDictCursor
 
 
 class Block:
-    def __init__(self, index: int, timestamp, proof: int, previous_hash: str) -> None:
+    def __init__(
+        self,
+        index: int,
+        timestamp,
+        proof: int,
+        previous_hash: str,
+        mined_difficulty: int,
+    ) -> None:
         self.index: int = index
         self.timestamp: datetime.datetime = timestamp
         self.proof: int = proof
         self.previous_hash: str = previous_hash
+        self.mined_difficulty: int = mined_difficulty
         self.hash: str = self.hash_block()
 
     def hash_block(self) -> str:
@@ -27,6 +35,7 @@ class Block:
             "timestamp": self.timestamp.isoformat(),
             "proof": self.proof,
             "previous_hash": self.previous_hash,
+            "mined_difficulty": self.mined_difficulty,
         }
 
     def to_dict(self) -> dict:
@@ -35,13 +44,12 @@ class Block:
             "timestamp": self.timestamp.isoformat(),
             "proof": self.proof,
             "previous_hash": self.previous_hash,
+            "mined_difficulty": self.mined_difficulty,
             "hash": self.hash,
         }
 
     def __str__(self) -> str:
-        return f"Block index: {self.index}, timestamp: {self.timestamp}, proof: {
-            self.proof
-        }, previous_hash: {self.previous_hash}, hash: {self.hash}"
+        return f"Block index: {self.index}, timestamp: {self.timestamp}, proof: {self.proof}, previous_hash: {self.previous_hash}, mined_difficulty: {self.mined_difficulty}, hash: {self.hash}"
 
 
 class Blockchain:
@@ -74,7 +82,10 @@ class Blockchain:
                     timestamp TIMESTAMP NOT NULL,
                     proof INTEGER NOT NULL,
                     previous_hash VARCHAR(64) NOT NULL,
-                    hash VARCHAR(64) NOT NULL
+                    mined_difficulty INTEGER NOT NULL,
+                    hash VARCHAR(64) NOT NULL UNIQUE,
+                    CONSTRAINT unique_index UNIQUE (index),
+                    CONSTRAINT unique_previous_hash UNIQUE (previous_hash)
                 );
             """
 
@@ -102,9 +113,13 @@ class Blockchain:
                             timestamp=row["timestamp"],
                             proof=row["proof"],
                             previous_hash=row["previous_hash"],
+                            mined_difficulty=row["mined_difficulty"],
                         )
                         self.chain.append(block)
                     self.height = rows[-1]["index"]
+
+                    if not self.validate_chain():
+                        raise Exception("Blockchain validation failed.")
                 else:
                     self.create_genesis_block()
         except Exception as e:
@@ -117,24 +132,121 @@ class Blockchain:
             timestamp=datetime.datetime.now(),
             proof=1,
             previous_hash="0",
+            mined_difficulty=0,
         )
         self.add_block_to_db(genesis_block)
         self.chain.append(genesis_block)
         self.height = 1
 
     def add_block_to_db(self, block: Block) -> None:
+        if not self.validate_block(block):
+            raise Exception(f"Invalid block {block.index} detected. Aborting addition.")
+
         try:
             with self.conn.cursor() as cursor:
                 cursor.execute(
                     """
-                                    INSERT INTO blockchain (timestamp, proof, previous_hash, hash)
-                                    VALUES (%s, %s, %s, %s)
+                                    INSERT INTO blockchain (timestamp, proof, previous_hash, mined_difficulty, hash)
+                                    VALUES (%s, %s, %s, %s, %s)
                                 """,
-                    (block.timestamp, block.proof, block.previous_hash, block.hash),
+                    (
+                        block.timestamp,
+                        block.proof,
+                        block.previous_hash,
+                        block.mined_difficulty,
+                        block.hash,
+                    ),
                 )
                 self.conn.commit()
         except Exception as e:
             raise Exception(f"Error adding block to blockchain: {e}")
+
+    def validate_block(self, block: Block) -> bool:
+        if block.index == 1:
+            if block.previous_hash != "0":
+                print(f"Invalid genesis block: expected '0', got {block.previous_hash}")
+                return False
+            if block.proof != 1:
+                print(f"Invalid genesis block: expected 1, got {block.proof}")
+                return False
+            if block.mined_difficulty != 0:
+                print(
+                    f"Invalid genesis block: expected 0, got {block.mined_difficulty}"
+                )
+                return False
+            if block.hash != block.hash_block():
+                print("Invalid genesis block: hash mismatch")
+                return False
+
+            return True
+
+        if block.hash != block.hash_block():
+            print(f"Block {block.index} has an invalid hash.")
+            return False
+
+        last_block = self.chain[-1]
+        timestamp_str = block.timestamp.strftime("%Y%m%d%H%M%S")
+        target_prefix = timestamp_str[-block.mined_difficulty :]
+        expected_hash = hashlib.sha256(
+            f"{block.proof**2 - last_block.proof**2}".encode()
+        ).hexdigest()
+
+        if target_prefix not in expected_hash:
+            print(f"Block {block.index} has an invalid proof.")
+            return False
+
+        if block.previous_hash != last_block.hash:
+            print(f"Block {block.index} has an invalid previous hash.")
+            return False
+
+        return True
+
+    def validate_chain(self) -> bool:
+        for i in range(1, len(self.chain)):
+            current_block = self.chain[i]
+            if i == 1:
+                if current_block.index == 1:
+                    if current_block.previous_hash != "0":
+                        print(
+                            f"Invalid genesis block: expected '0', got {current_block.previous_hash}"
+                        )
+                        return False
+                    if current_block.proof != 1:
+                        print(
+                            f"Invalid genesis block: expected 1, got {current_block.proof}"
+                        )
+                        return False
+                    if current_block.mined_difficulty != 0:
+                        print(
+                            f"Invalid genesis block: expected 0, got {current_block.mined_difficulty}"
+                        )
+                        return False
+                    if current_block.hash != current_block.hash_block():
+                        print("Invalid genesis block: hash mismatch")
+                        return False
+
+            last_block = self.chain[i - 1]
+
+            if current_block.hash != current_block.hash_block():
+                print(f"Invalid hash at block {i}.")
+                return False
+
+            timestamp_str = current_block.timestamp.strftime("%Y%m%d%H%M%S")
+            target_prefix = timestamp_str[-current_block.mined_difficulty :]
+            if (
+                target_prefix
+                not in hashlib.sha256(
+                    f"{current_block.proof**2 - last_block.proof**2}".encode()
+                ).hexdigest()
+            ):
+                print(f"Invalid proof of work at block {i}.")
+                return False
+
+            if current_block.previous_hash != last_block.hash:
+                print(f"Invalid previous hash at block {i}.")
+                return False
+
+        return True
 
     def proof_of_work(self, previous_proof: int, timestamp: str) -> int:
         """
@@ -158,12 +270,14 @@ class Blockchain:
                 new_proof += 1
 
         return new_proof
-    
+
     def adjust_difficulty(self) -> None:
         if len(self.mining_times) < self.adjust_interval:
             return None
-    
-        average_time = sum(self.mining_times[-self.adjust_interval:]) / self.adjust_interval
+
+        average_time = (
+            sum(self.mining_times[-self.adjust_interval :]) / self.adjust_interval
+        )
 
         if average_time < self.target_time - 1:
             self.difficulty = min(self.difficulty + 1, 14)
@@ -197,15 +311,16 @@ class Blockchain:
         self.mining_times.append(end_time - start_time)
         print(f"Block mined! Time taken: {end_time - start_time:.2f} seconds")
 
-        if len(self.chain) % self.adjust_interval == 0:
-            self.adjust_difficulty()
-
         new_block = Block(
             index=last_block.index + 1,
             timestamp=current_timestamp,
             proof=proof,
             previous_hash=previous_hash,
+            mined_difficulty=self.difficulty,
         )
+
+        if len(self.chain) % self.adjust_interval == 0:
+            self.adjust_difficulty()
 
         self.add_block_to_db(new_block)
         self.chain.append(new_block)
