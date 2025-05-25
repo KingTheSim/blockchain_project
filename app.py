@@ -1,7 +1,7 @@
 import os
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, redirect
+from flask import Flask, Response, jsonify, redirect
 
 from body.blockchain import Blockchain
 
@@ -23,17 +23,17 @@ app.config["SECRET_KEY"] = "test_key"
 blockchain = Blockchain(db_config=db_config)
 
 @app.route("/get_chain", methods=["GET"])
-def get_chain():
+def get_chain() -> tuple[Response, int]:
     chain_data = [block.to_dict() for block in blockchain.chain]
     return jsonify(chain=chain_data, height=blockchain.height), 200
 
 @app.route("/mine", methods=["GET"])
-def mine():
+def mine() -> Response:
     try:
         block = blockchain.mine_block()
         return jsonify({
             "message": "Block mined successfully",
-            "block": block.to_dict()
+            "block": block.to_dict(),
         })
     except Exception as e:
         return jsonify({"error": str(e)})
