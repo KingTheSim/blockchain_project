@@ -1,52 +1,18 @@
 import datetime
 import hashlib
 import json
-import time
-from typing import Dict
+import sqlite3
 
 import psycopg2
 from psycopg2.extensions import connection
 from psycopg2.extras import RealDictCursor
-
-
-class Block:
-    def __init__(
-        self,
-        index: int,
-        timestamp: datetime.datetime,
-        previous_hash: str,
-    ) -> None:
-        self.index: int = index
-        self.timestamp: datetime.datetime = timestamp
-        self.previous_hash: str = previous_hash
-        self.hash: str = self.hash_block()
-
-    def hash_block(self) -> str:
-        block = json.dumps(self.to_dict_without_hash(), sort_keys=True).encode()
-        return hashlib.sha256(block).hexdigest()
-
-    def to_dict_without_hash(self) -> dict:
-        return {
-            "index": self.index,
-            "timestamp": self.timestamp.isoformat(),
-            "previous_hash": self.previous_hash,
-        }
-
-    def to_dict(self) -> dict:
-        return {
-            "index": self.index,
-            "timestamp": self.timestamp.isoformat(),
-            "previous_hash": self.previous_hash,
-            "hash": self.hash,
-        }
-
-    def __str__(self) -> str:
-        return f"Block index: {self.index}, timestamp: {self.timestamp}, previous_hash: {self.previous_hash}, hash: {self.hash}"
-
+from genesis import Block, GENESIS_BLOCK
 
 class Blockchain:
-    def __init__(self, db_config: dict[str, str]) -> None:
+    def __init__(self, db_config: dict[str, str]|None, db_type: str = "postgresql", db_sqlite_in_memory: bool = False) -> None:
+        self.db_type = db_type
         self.db_config = db_config
+        self.db_sqlite_in_memory = db_sqlite_in_memory
         self.height: int = 0
         self.chain: list[Block] = []
 
@@ -56,14 +22,32 @@ class Blockchain:
 
     def connect_to_db(self) -> connection:
         try:
-            conn = psycopg2.connect(**self.db_config)
-            print("Connected to the database successfully!")
+            if self.db_type == "sqlite":
+                if self.db_sqlite_in_memory:
+                    conn = sqlite3.connect(":memory:")
+                else:
+                    conn = sqlite3.connect("blockchain.db")
+                conn.row_factory = sqlite3.Row
+                print("Connected to SQLite database successfully!")
+            else:
+                conn = psycopg2.connect(**self.db_config)
+                print("Connected to PostgreSQL database successfully!")
             return conn
         except Exception as e:
             raise Exception(f"Error connecting to database: {e}")
 
     def create_table(self) -> None:
-        create_table_query = """
+        if self.db_type == "sqlite":
+            create_table_query = """
+                CREATE TABLE IF NOT EXISTS blockchain (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    previous_hash TEXT NOT NULL,
+                    hash TEXT NOT NULL UNIQUE
+                );
+            """
+        else:
+            create_table_query = """
                 CREATE TABLE IF NOT EXISTS blockchain (
                     index SERIAL PRIMARY KEY,
                     timestamp TIMESTAMP NOT NULL,
@@ -75,75 +59,84 @@ class Blockchain:
             """
 
         try:
-            with self.conn.cursor() as cursor:
+            with self.conn:
+                cursor = self.conn.cursor() if self.db_type == "postgresql" else self.conn
                 cursor.execute(create_table_query)
-                self.conn.commit()
+                self.conn.commit() if self.db_type == "postgresql" else None
         except Exception as e:
             raise Exception(f"Error creating blockchain table: {e}")
 
-    def load_chain(self) -> None:
-        """
-        Load the blockchain from the database into memory.
-        If it's the chain's start, initialize it with a genesis block.
-        """
+    def load_chain(self):
         try:
-            with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            if self.db_type == "sqlite":
+                cursor = self.conn.cursor()
+                cursor.execute("SELECT * FROM blockchain ORDER BY id ASC;")
+                rows = cursor.fetchall()
+                for row in rows:
+                    index = row["id"]
+                    timestamp = datetime.datetime.fromisoformat(row["timestamp"])
+                    previous_hash = row["previous_hash"]
+                    # If this is the genesis block, use the shared one
+                    block = GENESIS_BLOCK if index == 1 else Block(index, timestamp, previous_hash)
+                    self.chain.append(block)
+                self.height = rows[-1]["id"] if rows else 0
+
+            else:
+                cursor = self.conn.cursor(cursor_factory=RealDictCursor)
                 cursor.execute("SELECT * FROM blockchain ORDER BY index ASC;")
                 rows = cursor.fetchall()
+                for row in rows:
+                    index = row["index"]
+                    timestamp = row["timestamp"]
+                    previous_hash = row["previous_hash"]
+                    # If this is the genesis block, use the shared one
+                    block = GENESIS_BLOCK if index == 1 else Block(index, timestamp, previous_hash)
+                    self.chain.append(block)
+                self.height = rows[-1]["index"] if rows else 0
 
-                if rows:
-                    for row in rows:
-                        block = Block(
-                            index=row["index"],
-                            timestamp=row["timestamp"],
-                            previous_hash=row["previous_hash"],
-                        )
-                        self.chain.append(block)
-                    self.height = rows[-1]["index"]
+            if self.chain:
+                if not self.validate_chain():
+                    raise Exception("Blockchain validation failed.")
+            else:
+                # If no chain exists in DB, use predefined shared genesis block
+                self.add_block_to_db(GENESIS_BLOCK)
+                self.chain.append(GENESIS_BLOCK)
+                self.height = 1
 
-                    if not self.validate_chain():
-                        raise Exception("Blockchain validation failed.")
-                else:
-                    self.create_genesis_block()
         except Exception as e:
             raise Exception(f"Error loading blockchain: {e}")
-
-    def create_genesis_block(self) -> None:
-        """Create the genesis block"""
-        genesis_block = Block(
-            index=1,
-            timestamp=datetime.datetime.now(),
-            previous_hash="0",
-        )
-        self.add_block_to_db(genesis_block)
-        self.chain.append(genesis_block)
-        self.height = 1
 
     def add_block_to_db(self, block: Block) -> None:
         if not self.validate_block(block):
             raise Exception(f"Invalid block {block.index} detected. Aborting addition.")
 
         try:
-            with self.conn.cursor() as cursor:
-                cursor.execute(
-                    """
-                                    INSERT INTO blockchain (timestamp, previous_hash, hash)
-                                    VALUES (%s, %s, %s)
-                                """,
-                    (
-                        block.timestamp,
-                        block.previous_hash,
-                        block.hash,
-                    ),
-                )
+            if self.db_type == "sqlite":
+                cursor = self.conn.cursor()
+                query = """
+                    INSERT INTO blockchain (timestamp, previous_hash, hash)
+                    VALUES (?, ?, ?);
+                """
+                values = (block.timestamp.isoformat(), block.previous_hash, block.hash)
+                cursor.execute(query, values)
                 self.conn.commit()
+            else:
+                with self.conn.cursor() as cursor:
+                    query = """
+                        INSERT INTO blockchain (timestamp, previous_hash, hash)
+                        VALUES (%s, %s, %s);
+                    """
+                    values = (block.timestamp, block.previous_hash, block.hash)
+                    cursor.execute(query, values)
+                    self.conn.commit()
         except Exception as e:
             raise Exception(f"Error adding block to blockchain: {e}")
 
+
     def validate_block(self, block: Block) -> bool:
         if block.index == 1:
-            if block.previous_hash != "0":
-                print(f"Invalid genesis block: expected '0', got {block.previous_hash}")
+            if block.previous_hash != "genesis":
+                print(f"Invalid genesis block: expected genesis, got {block.previous_hash}")
                 return False
             if block.hash != block.hash_block():
                 print("Invalid genesis block: hash mismatch")
@@ -155,7 +148,7 @@ class Blockchain:
             print(f"Block {block.index} has an invalid hash.")
             return False
         if block.index != self.chain[-1].index + 1:
-            print(f"Block {block.index} has an invalid index.")
+            print(f"Block {block.index} has an invalid index. Expected: {self.chain[-1].index + 1}, received: {block.index}.")
             return False
 
         return True
@@ -169,3 +162,4 @@ class Blockchain:
 
     def close_connection(self) -> None:
         self.conn.close()
+
